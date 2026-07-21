@@ -173,6 +173,23 @@ end
     @test validate_recipe(joinpath(FIXTURES, "Z", "Zstd", "build_tarballs.jl"), v"1.5.6") === nothing
 end
 
+@testset "is_security_advisories_pr" begin
+    is_sa = Urdarbrunnr.is_security_advisories_pr
+    @test is_sa("https://github.com/JuliaLang/SecurityAdvisories.jl/pull/123")
+    @test is_sa("https://github.com/JuliaLang/SecurityAdvisories.jl/pull/1/")
+    @test is_sa("  https://github.com/JuliaLang/SecurityAdvisories.jl/pull/123 ")
+
+    @test !is_sa(nothing)
+    @test !is_sa("https://github.com/JuliaLang/SecurityAdvisories/pull/123")
+    @test !is_sa("https://github.com/someone-else/SecurityAdvisories.jl/pull/123")
+    @test !is_sa("https://github.com/JuliaLang/SecurityAdvisories.jl/issues/123")
+    @test !is_sa("https://github.com/JuliaPackaging/Yggdrasil/pull/123")
+    @test !is_sa("https://github.com/JuliaLang/SecurityAdvisories.jl")
+    @test !is_sa("https://example.com/JuliaLang/SecurityAdvisories.jl/pull/123")
+    @test !is_sa("CVE-2024-12345")
+    @test !is_sa("see https://github.com/JuliaLang/SecurityAdvisories.jl/pull/123 for details")
+end
+
 @testset "workflow_provenance" begin
     withenv("GITHUB_RUN_ID" => "12345", "GITHUB_REPOSITORY" => "mbauman/Urdarbrunnr",
             "GITHUB_ACTOR" => "mbauman", "GITHUB_SERVER_URL" => nothing) do
@@ -196,6 +213,7 @@ end
 @testset "find_recipe" begin
     @test find_recipe(FIXTURES, "Zstd") == joinpath(FIXTURES, "Z", "Zstd", "build_tarballs.jl")
     @test find_recipe(FIXTURES, "zstd") == joinpath(FIXTURES, "Z", "Zstd", "build_tarballs.jl")
+    @test find_recipe(FIXTURES, "Zstd_jll") == joinpath(FIXTURES, "Z", "Zstd", "build_tarballs.jl")
     @test_throws ErrorException find_recipe(FIXTURES, "NoSuchProject")
 end
 

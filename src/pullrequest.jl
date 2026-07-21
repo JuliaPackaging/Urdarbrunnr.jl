@@ -85,7 +85,16 @@ function workflow_provenance()
 end
 
 """
-    create_update_pr(name, new_version; dry_run=false) -> Union{String,Nothing}
+    is_security_advisories_pr(ref) -> Bool
+
+Whether `ref` is the URL of a JuliaLang/SecurityAdvisories.jl pull request.
+"""
+is_security_advisories_pr(ref::AbstractString) =
+    occursin(r"^https://github\.com/JuliaLang/SecurityAdvisories\.jl/pull/\d+/?$"i, strip(ref))
+is_security_advisories_pr(::Nothing) = false
+
+"""
+    create_update_pr(name, new_version; dry_run=false, context=nothing) -> Union{String,Nothing}
 
 The full pipeline: update the recipe for `name` to `new_version`, commit it
 on a fresh branch, push that branch to the bot's fork (`\$YGGDRASIL_FORK`,
@@ -97,11 +106,20 @@ The commit author defaults to git's own configuration; set
 delegated entirely to `gh`: set `GH_TOKEN` to the bot account's token (and
 run `gh auth setup-git`) so both the push and the PR creation act as the bot.
 
+When `context` is provided, `Ref \$context` is appended to the pull
+request's body; and when it is the URL of a `SecurityAdvisories` pull
+request, norn-bot goes back and comments a link to the newly created
+Yggdrasil pull request on it.
+
 With `dry_run=true`, stops after applying the update: prints the diff,
 restores the working tree, and returns `nothing`.
 """
 function create_update_pr(name::AbstractString, new_version::VersionNumber;
-                          dry_run::Bool=false)
+                          dry_run::Bool=false,
+                          context::Union{Nothing,AbstractString}=nothing)
+    if context !== nothing && isempty(strip(context))
+        context = nothing
+    end
     root = ensure_clone!()
     branch = "urdarbrunnr/$(lowercase(name))"
     git(root, "checkout", "--quiet", "-B", branch, "origin/master")
@@ -139,6 +157,9 @@ function create_update_pr(name::AbstractString, new_version::VersionNumber;
 
     This pull request was generated automatically by [Urdarbrunnr](https://github.com/mbauman/Urdarbrunnr).
     """ * workflow_provenance()
+    if context !== nothing
+        body *= "\nRef $context\n"
+    end
     author = String[]
     haskey(ENV, "NORN_GIT_NAME") && append!(author, ["-c", "user.name=$(ENV["NORN_GIT_NAME"])"])
     haskey(ENV, "NORN_GIT_EMAIL") && append!(author, ["-c", "user.email=$(ENV["NORN_GIT_EMAIL"])"])
@@ -150,5 +171,15 @@ function create_update_pr(name::AbstractString, new_version::VersionNumber;
                             --head $fork_owner:$branch
                             --title $title --body $body`; dir=root))
     @info "Opened $url"
+
+    if is_security_advisories_pr(context)
+        # The Yggdrasil PR was successfully created; link it back on the
+        # advisory PR. A failure here shouldn't fail the whole update.
+        try
+            run(`gh pr comment $(strip(context)) --body $("Opened $url updating $(recipe.name) to v$new_version.")`)
+        catch err
+            @warn "could not comment on $context" err
+        end
+    end
     return url
 end

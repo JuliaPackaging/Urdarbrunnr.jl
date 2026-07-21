@@ -15,6 +15,10 @@ on:
         description: "Show the diff without pushing or opening a PR"
         type: boolean
         default: false
+      context:
+        description: "Optional reference to note in the PR body (e.g. a SecurityAdvisories PR URL)"
+        required: false
+        type: string
 
 # The default GITHUB_TOKEN is only used to check out this repository; all
 # writes happen against norn-bot's Yggdrasil fork via NORN_BOT_TOKEN.
@@ -50,5 +54,9 @@ jobs:
         env:
           RECIPE_NAME: ${{ inputs.name }}
           NEW_VERSION: ${{ inputs.version }}
-          DRY_RUN: ${{ inputs.dry-run && '--dry-run' || '' }}
-        run: julia --project bin/update.jl "$RECIPE_NAME" "$NEW_VERSION" $DRY_RUN
+          CONTEXT: ${{ inputs.context }}
+        run: |
+          args=("$RECIPE_NAME" "$NEW_VERSION")
+          if ${{ inputs.dry-run }}; then args+=("--dry-run"); fi
+          if [ -n "$CONTEXT" ]; then args+=("--context=$CONTEXT"); fi
+          julia --project bin/update.jl "${args[@]}"
