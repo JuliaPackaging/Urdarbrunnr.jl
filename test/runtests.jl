@@ -84,7 +84,7 @@ end
 @testset "update_recipe: git + static file source" begin
     recipe = parse_recipe(joinpath(FIXTURES, "L", "LibGit", "build_tarballs.jl"))
     resolved = []
-    fake_commit = (url, v) -> (push!(resolved, (url, v)); "e"^40)
+    fake_commit = (url, commit, cur, new) -> (push!(resolved, (url, commit, cur, new)); "e"^40)
     fake_hash = url -> error("static FileSource URL should not be re-fetched")
     text = update_recipe(recipe, v"2.4.0"; archive_hash=fake_hash, git_commit=fake_commit)
 
@@ -93,7 +93,63 @@ end
     @test !occursin("0123456789abcdef0123456789abcdef01234567", text)
     # Static FileSource hash untouched
     @test occursin("aaaabbbbccccddddeeeeffff0000111122223333444455556666777788889999", text)
-    @test resolved == [("https://github.com/example/libgit.git", v"2.4.0")]
+    @test resolved == [("https://github.com/example/libgit.git",
+                        "0123456789abcdef0123456789abcdef01234567", v"2.3.4", v"2.4.0")]
+end
+
+@testset "parse_ls_remote" begin
+    tags = Urdarbrunnr.parse_ls_remote("""
+        $("1"^40)\trefs/tags/v1.5.6
+        $("2"^40)\trefs/tags/v1.5.7
+        $("3"^40)\trefs/tags/v2.0.0
+        $("4"^40)\trefs/tags/v2.0.0^{}
+        $("5"^40)\trefs/heads/not-a-tag
+        """)
+    @test tags == [(tag="v1.5.6", commit="1"^40),
+                   (tag="v1.5.7", commit="2"^40),
+                   (tag="v2.0.0", commit="4"^40)]  # peeled commit wins for annotated tags
+    @test Urdarbrunnr.parse_ls_remote("") == []
+end
+
+@testset "derive_tag_commit" begin
+    derive = Urdarbrunnr.derive_tag_commit
+    mktags(pairs...) = [(tag=String(t), commit=String(c)) for (t, c) in pairs]
+
+    # Plain v-prefix scheme
+    tags = mktags("v1.5.6" => "a"^40, "v1.5.7" => "b"^40)
+    @test derive(tags, "a"^40, v"1.5.6", v"1.5.7") == "b"^40
+
+    # Bare version tags
+    tags = mktags("1.5.6" => "a"^40, "1.5.7" => "b"^40)
+    @test derive(tags, "a"^40, v"1.5.6", v"1.5.7") == "b"^40
+
+    # Arbitrary prefix is preserved verbatim
+    tags = mktags("release-1.2.3" => "a"^40, "release-1.2.4" => "b"^40,
+                  "v1.2.4" => "c"^40)  # decoy in a different scheme
+    @test derive(tags, "a"^40, v"1.2.3", v"1.2.4") == "b"^40
+
+    # Underscore separators
+    tags = mktags("FOO_1_2_3" => "a"^40, "FOO_1_2_4" => "b"^40)
+    @test derive(tags, "a"^40, v"1.2.3", v"1.2.4") == "b"^40
+
+    # Two-component tags for patch-zero versions, in both directions
+    tags = mktags("v2.1" => "a"^40, "v2.2" => "b"^40, "v2.2.1" => "c"^40)
+    @test derive(tags, "a"^40, v"2.1.0", v"2.2.0") == "b"^40
+    @test derive(tags, "a"^40, v"2.1.0", v"2.2.1") == "c"^40
+
+    # Current commit isn't tagged at all
+    tags = mktags("v1.0.0" => "a"^40)
+    @test_throws "cannot infer the tag naming scheme" derive(tags, "f"^40, v"1.0.0", v"1.1.0")
+
+    # Current tag doesn't contain the current version
+    tags = mktags("some-random-tag" => "a"^40)
+    @test_throws "do not contain the current version" derive(tags, "a"^40, v"1.0.0", v"1.1.0")
+
+    # The new version simply isn't tagged yet
+    tags = mktags("v1.0.0" => "a"^40)
+    err = try derive(tags, "a"^40, v"1.0.0", v"1.1.0"); nothing catch e e end
+    @test err isa ErrorException
+    @test occursin("tried: v1.1.0", err.msg)
 end
 
 @testset "find_recipe" begin

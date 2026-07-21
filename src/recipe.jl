@@ -140,8 +140,9 @@ end
 Return the recipe text updated to `new_version`: the `version = v"..."`
 literal is bumped, and every source hash is replaced with the hash of the
 re-rendered source (`archive_hash(url)` for archive/file sources,
-`git_commit(url, new_version)` for git sources). The hash resolvers are
-keyword arguments so tests can inject fakes.
+`git_commit(url, current_commit, current_version, new_version)` for git
+sources). The hash resolvers are keyword arguments so tests can inject
+fakes.
 """
 function update_recipe(recipe::Recipe, new_version::VersionNumber;
                        archive_hash=archive_sha256, git_commit=resolve_git_tag)
@@ -155,7 +156,7 @@ function update_recipe(recipe::Recipe, new_version::VersionNumber;
 
     for src in recipe.sources
         if src.kind === :GitSource
-            new_hash = git_commit(src.url, new_version)
+            new_hash = git_commit(src.url, src.hash, recipe.version, new_version)
         else
             new_url = render_url(src.url_expr; version=new_version, name=recipe.name)
             if new_url == src.url
