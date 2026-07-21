@@ -155,7 +155,7 @@ function create_update_pr(name::AbstractString, new_version::VersionNumber;
     body = """
     Update $(recipe.name) from v$(recipe.version) to v$new_version.
 
-    This pull request was generated automatically by [Urdarbrunnr](https://github.com/mbauman/Urdarbrunnr).
+    This pull request was generated automatically by [Urdarbrunnr](https://github.com/JuliaPackaging/Urdarbrunnr.jl).
     """ * workflow_provenance()
     if context !== nothing
         body *= "\nRef $context\n"
