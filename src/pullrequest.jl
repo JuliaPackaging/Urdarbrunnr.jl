@@ -47,6 +47,21 @@ function find_recipe(root::AbstractString, name::AbstractString)
 end
 
 """
+    workflow_provenance() -> String
+
+When running inside a GitHub Actions workflow, a Markdown sentence linking
+to the run and crediting whoever triggered it, built from the default
+`GITHUB_*` environment variables; empty when not running in Actions.
+"""
+function workflow_provenance()
+    haskey(ENV, "GITHUB_RUN_ID") && haskey(ENV, "GITHUB_REPOSITORY") || return ""
+    server = get(ENV, "GITHUB_SERVER_URL", "https://github.com")
+    url = "$server/$(ENV["GITHUB_REPOSITORY"])/actions/runs/$(ENV["GITHUB_RUN_ID"])"
+    actor = haskey(ENV, "GITHUB_ACTOR") ? ", triggered by @$(ENV["GITHUB_ACTOR"])" : ""
+    return "\nCreated by [this workflow run]($url)$actor.\n"
+end
+
+"""
     create_update_pr(name, new_version; dry_run=false) -> Union{String,Nothing}
 
 The full pipeline: update the recipe for `name` to `new_version`, commit it
@@ -65,7 +80,7 @@ restores the working tree, and returns `nothing`.
 function create_update_pr(name::AbstractString, new_version::VersionNumber;
                           dry_run::Bool=false)
     root = ensure_clone!()
-    branch = "urdarbrunnr/$(lowercase(name))-v$(new_version)"
+    branch = "urdarbrunnr/$(lowercase(name))"
     git(root, "checkout", "--quiet", "-B", branch, "origin/master")
 
     recipe_path = find_recipe(root, name)
@@ -92,7 +107,7 @@ function create_update_pr(name::AbstractString, new_version::VersionNumber;
     Update $(recipe.name) from v$(recipe.version) to v$new_version.
 
     This pull request was generated automatically by [Urdarbrunnr](https://github.com/mbauman/Urdarbrunnr).
-    """
+    """ * workflow_provenance()
     author = String[]
     haskey(ENV, "NORN_GIT_NAME") && append!(author, ["-c", "user.name=$(ENV["NORN_GIT_NAME"])"])
     haskey(ENV, "NORN_GIT_EMAIL") && append!(author, ["-c", "user.email=$(ENV["NORN_GIT_EMAIL"])"])

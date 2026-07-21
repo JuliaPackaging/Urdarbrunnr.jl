@@ -152,6 +152,26 @@ end
     @test occursin("tried: v1.1.0", err.msg)
 end
 
+@testset "workflow_provenance" begin
+    withenv("GITHUB_RUN_ID" => "12345", "GITHUB_REPOSITORY" => "mbauman/Urdarbrunnr",
+            "GITHUB_ACTOR" => "mbauman", "GITHUB_SERVER_URL" => nothing) do
+        prov = Urdarbrunnr.workflow_provenance()
+        @test occursin("(https://github.com/mbauman/Urdarbrunnr/actions/runs/12345)", prov)
+        @test occursin("triggered by @mbauman", prov)
+    end
+    # Actor is optional
+    withenv("GITHUB_RUN_ID" => "12345", "GITHUB_REPOSITORY" => "mbauman/Urdarbrunnr",
+            "GITHUB_ACTOR" => nothing) do
+        prov = Urdarbrunnr.workflow_provenance()
+        @test occursin("actions/runs/12345", prov)
+        @test !occursin("triggered by", prov)
+    end
+    # Outside of GitHub Actions: contributes nothing to the PR body
+    withenv("GITHUB_RUN_ID" => nothing, "GITHUB_REPOSITORY" => nothing) do
+        @test Urdarbrunnr.workflow_provenance() == ""
+    end
+end
+
 @testset "find_recipe" begin
     @test find_recipe(FIXTURES, "Zstd") == joinpath(FIXTURES, "Z", "Zstd", "build_tarballs.jl")
     @test find_recipe(FIXTURES, "zstd") == joinpath(FIXTURES, "Z", "Zstd", "build_tarballs.jl")
