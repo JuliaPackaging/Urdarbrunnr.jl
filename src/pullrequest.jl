@@ -4,9 +4,9 @@
 Settings for talking to Yggdrasil and the bot's fork. Defaults are read
 from the environment so the same code works locally and in CI:
 
-- `URDARBRUNNR_FORK`: `owner/repo` slug of the bot's fork (required to open PRs)
-- `URDARBRUNNR_CLONE`: where to keep the working clone of Yggdrasil
-- `URDARBRUNNR_GIT_NAME` / `URDARBRUNNR_GIT_EMAIL`: commit author identity
+- `YGGDRASIL_FORK`: `owner/repo` slug of the bot's fork (required to open PRs)
+- `YGGDRASIL_CLONE`: where to keep the working clone of Yggdrasil
+- `NORN_GIT_NAME` / `NORN_GIT_EMAIL`: commit author identity
 
 Authentication is delegated entirely to `gh`: set `GH_TOKEN` to the bot
 account's token (and run `gh auth setup-git`, or rely on `gh` credential
@@ -15,11 +15,11 @@ helper) so both pushes and PR creation act as the bot.
 Base.@kwdef struct Config
     upstream::String = "JuliaPackaging/Yggdrasil"
     branch::String = "master"
-    fork::String = get(ENV, "URDARBRUNNR_FORK", "")
-    clone_dir::String = get(ENV, "URDARBRUNNR_CLONE",
+    fork::String = get(ENV, "YGGDRASIL_FORK", "")
+    clone_dir::String = get(ENV, "YGGDRASIL_CLONE",
                             joinpath(homedir(), ".urdarbrunnr", "Yggdrasil"))
-    git_name::String = get(ENV, "URDARBRUNNR_GIT_NAME", "urdarbrunnr[bot]")
-    git_email::String = get(ENV, "URDARBRUNNR_GIT_EMAIL", "urdarbrunnr@juliahub.com")
+    git_name::String = get(ENV, "NORN_GIT_NAME", "urdarbrunnr[bot]")
+    git_email::String = get(ENV, "NORN_GIT_EMAIL", "urdarbrunnr@juliahub.com")
 end
 
 git(cfg::Config, args...) = run(`git -C $(cfg.clone_dir) $(collect(args))`)
@@ -101,15 +101,13 @@ function create_update_pr(name::AbstractString, new_version::VersionNumber;
     end
 
     isempty(cfg.fork) &&
-        error("no fork configured: set URDARBRUNNR_FORK to the bot's owner/repo slug")
+        error("no fork configured: set YGGDRASIL_FORK to the bot's owner/repo slug")
 
     title = "[$(recipe.name)] Update to v$new_version"
     body = """
     Update $(recipe.name) from v$(recipe.version) to v$new_version.
 
-    This pull request was generated automatically by
-    [Urdarbrunnr](https://github.com/JuliaComputing/Urdarbrunnr); source
-    hashes were recomputed from the re-rendered source URLs.
+    This pull request was generated automatically by [Urdarbrunnr](https://github.com/mbauman/Urdarbrunnr).
     """
     git(cfg, "-c", "user.name=$(cfg.git_name)", "-c", "user.email=$(cfg.git_email)",
         "commit", "--quiet", "--all", "--message", title)

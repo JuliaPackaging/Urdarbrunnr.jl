@@ -26,9 +26,9 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ secrets.NORN_BOT_TOKEN }}
-      URDARBRUNNR_FORK: norn-bot/Yggdrasil
-      URDARBRUNNR_GIT_NAME: norn-bot
-      URDARBRUNNR_GIT_EMAIL: norn-bot@users.noreply.github.com
+      YGGDRASIL_FORK: norn-bot/Yggdrasil
+      NORN_GIT_NAME: norn-bot
+      NORN_GIT_EMAIL: 307683242+norn-bot@users.noreply.github.com
     steps:
       - uses: actions/checkout@v4
 
