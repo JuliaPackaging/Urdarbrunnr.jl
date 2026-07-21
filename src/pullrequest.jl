@@ -1,45 +1,22 @@
-"""
-    Config
-
-Settings for talking to Yggdrasil and the bot's fork. Defaults are read
-from the environment so the same code works locally and in CI:
-
-- `YGGDRASIL_FORK`: `owner/repo` slug of the bot's fork (required to open PRs)
-- `YGGDRASIL_CLONE`: where to keep the working clone of Yggdrasil
-- `NORN_GIT_NAME` / `NORN_GIT_EMAIL`: commit author identity
-
-Authentication is delegated entirely to `gh`: set `GH_TOKEN` to the bot
-account's token (and run `gh auth setup-git`, or rely on `gh` credential
-helper) so both pushes and PR creation act as the bot.
-"""
-Base.@kwdef struct Config
-    upstream::String = "JuliaPackaging/Yggdrasil"
-    branch::String = "master"
-    fork::String = get(ENV, "YGGDRASIL_FORK", "")
-    clone_dir::String = get(ENV, "YGGDRASIL_CLONE",
-                            joinpath(homedir(), ".urdarbrunnr", "Yggdrasil"))
-    git_name::String = get(ENV, "NORN_GIT_NAME", "urdarbrunnr[bot]")
-    git_email::String = get(ENV, "NORN_GIT_EMAIL", "urdarbrunnr@juliahub.com")
-end
-
-git(cfg::Config, args...) = run(`git -C $(cfg.clone_dir) $(collect(args))`)
-gitread(cfg::Config, args...) = readchomp(`git -C $(cfg.clone_dir) $(collect(args))`)
+git(root, args...) = run(`git -C $root $(collect(args))`)
 
 """
-    ensure_clone!(cfg::Config) -> String
+    ensure_clone!() -> String
 
-Make sure a checkout of upstream Yggdrasil exists at `cfg.clone_dir` and is
-up to date, and return that path. Uses a blobless partial clone since
+Make sure an up-to-date checkout of JuliaPackaging/Yggdrasil exists and
+return its path (`\$YGGDRASIL_CLONE`, defaulting to
+`~/.urdarbrunnr/Yggdrasil`). Uses a blobless partial clone since
 Yggdrasil's history is large and we only ever touch one recipe.
 """
-function ensure_clone!(cfg::Config)
-    if !isdir(joinpath(cfg.clone_dir, ".git"))
-        mkpath(dirname(cfg.clone_dir))
-        run(`git clone --filter=blob:none https://github.com/$(cfg.upstream).git $(cfg.clone_dir)`)
+function ensure_clone!()
+    dir = get(ENV, "YGGDRASIL_CLONE", joinpath(homedir(), ".urdarbrunnr", "Yggdrasil"))
+    if !isdir(joinpath(dir, ".git"))
+        mkpath(dirname(dir))
+        run(`git clone --filter=blob:none https://github.com/JuliaPackaging/Yggdrasil.git $dir`)
     else
-        git(cfg, "fetch", "origin", cfg.branch)
+        git(dir, "fetch", "origin", "master")
     end
-    return cfg.clone_dir
+    return dir
 end
 
 """
@@ -70,20 +47,26 @@ function find_recipe(root::AbstractString, name::AbstractString)
 end
 
 """
-    create_update_pr(name, new_version; cfg=Config(), dry_run=false) -> Union{String,Nothing}
+    create_update_pr(name, new_version; dry_run=false) -> Union{String,Nothing}
 
 The full pipeline: update the recipe for `name` to `new_version`, commit it
-on a fresh branch, push that branch to the bot's fork, and open a PR
-against upstream Yggdrasil. Returns the PR URL.
+on a fresh branch, push that branch to the bot's fork (`\$YGGDRASIL_FORK`,
+an `owner/repo` slug), and open a PR against JuliaPackaging/Yggdrasil.
+Returns the PR URL.
+
+The commit author defaults to git's own configuration; set
+`\$NORN_GIT_NAME`/`\$NORN_GIT_EMAIL` to override it. Authentication is
+delegated entirely to `gh`: set `GH_TOKEN` to the bot account's token (and
+run `gh auth setup-git`) so both the push and the PR creation act as the bot.
 
 With `dry_run=true`, stops after applying the update: prints the diff,
 restores the working tree, and returns `nothing`.
 """
 function create_update_pr(name::AbstractString, new_version::VersionNumber;
-                          cfg::Config=Config(), dry_run::Bool=false)
-    root = ensure_clone!(cfg)
+                          dry_run::Bool=false)
+    root = ensure_clone!()
     branch = "urdarbrunnr/$(lowercase(name))-v$(new_version)"
-    git(cfg, "checkout", "--quiet", "-B", branch, "origin/$(cfg.branch)")
+    git(root, "checkout", "--quiet", "-B", branch, "origin/master")
 
     recipe_path = find_recipe(root, name)
     recipe = parse_recipe(recipe_path)
@@ -95,13 +78,14 @@ function create_update_pr(name::AbstractString, new_version::VersionNumber;
 
     if dry_run
         run(pipeline(`git -C $root --no-pager diff`, stdout))
-        git(cfg, "checkout", "--quiet", "--", ".")
-        git(cfg, "checkout", "--quiet", cfg.branch)
+        git(root, "checkout", "--quiet", "--", ".")
+        git(root, "checkout", "--quiet", "master")
         return nothing
     end
 
-    isempty(cfg.fork) &&
+    fork = get(ENV, "YGGDRASIL_FORK") do
         error("no fork configured: set YGGDRASIL_FORK to the bot's owner/repo slug")
+    end
 
     title = "[$(recipe.name)] Update to v$new_version"
     body = """
@@ -109,12 +93,15 @@ function create_update_pr(name::AbstractString, new_version::VersionNumber;
 
     This pull request was generated automatically by [Urdarbrunnr](https://github.com/mbauman/Urdarbrunnr).
     """
-    git(cfg, "-c", "user.name=$(cfg.git_name)", "-c", "user.email=$(cfg.git_email)",
-        "commit", "--quiet", "--all", "--message", title)
-    git(cfg, "push", "--force", "https://github.com/$(cfg.fork).git", "$branch:$branch")
+    author = String[]
+    haskey(ENV, "NORN_GIT_NAME") && append!(author, ["-c", "user.name=$(ENV["NORN_GIT_NAME"])"])
+    haskey(ENV, "NORN_GIT_EMAIL") && append!(author, ["-c", "user.email=$(ENV["NORN_GIT_EMAIL"])"])
+    git(root, author..., "commit", "--quiet", "--all", "--message", title)
+    git(root, "push", "--force", "https://github.com/$fork.git", "$branch:$branch")
 
-    fork_owner = first(split(cfg.fork, '/'))
-    url = readchomp(setenv(`gh pr create --repo $(cfg.upstream) --head $fork_owner:$branch
+    fork_owner = first(split(fork, '/'))
+    url = readchomp(setenv(`gh pr create --repo JuliaPackaging/Yggdrasil
+                            --head $fork_owner:$branch
                             --title $title --body $body`; dir=root))
     @info "Opened $url"
     return url
